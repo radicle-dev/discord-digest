@@ -1,5 +1,6 @@
 import { verifyKey } from "discord-interactions";
 import { Request, Response } from "@google-cloud/functions-framework/build/src/functions";
+import env from "./util/env";
 
 function validate(req: Request, res: Response) {
   const signature = req.get("X-Signature-Ed25519");
@@ -23,7 +24,7 @@ function validate(req: Request, res: Response) {
     req.rawBody,
     signature,
     timestamp,
-    "d31a0005ae0419b00cdae112902ea44ad5ad91c7887b487d02d5ad4806cbf598"
+    env("DISCORD_PUBLIC_KEY"),
   );
 }
 
