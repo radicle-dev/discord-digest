@@ -30,4 +30,4 @@ jobs:
     - name: build
       run: npm run build
     - name: deploy
-      run: npm run deploy-gcp
+      run: gcloud functions deploy discordDigest --runtime nodejs16 --region=europe-west1 --trigger-http --project discord-digest --set-env-vars DISCORD_BOT_TOKEN=${{ secrets.DISCORD_BOT_TOKEN }},DISCORD_CLIENT_ID=${{ secrets.DISCORD_CLIENT_ID }}
