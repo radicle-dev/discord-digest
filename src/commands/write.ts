@@ -54,7 +54,8 @@ export class DigestCommand extends BaseCommand {
 		})
 
 		const collector = interaction.channel?.createMessageComponentCollector({
-			filter: (i) => i.user.id === interaction.user.id && !interaction.user.bot
+			filter: (i) => i.user.id === interaction.user.id && !interaction.user.bot,
+			time: 60_000 * 10 // 10 min timeout to post
 		})
 
 		collector?.on('collect', async (i) => {
@@ -74,12 +75,11 @@ export class DigestCommand extends BaseCommand {
 				const post = new MessageEmbed().setColor('#00FF00').setDescription(output)
 				outputChannel.send({ embeds: [post] })
 			} else if (reason === 'time') {
-				let embed = new MessageEmbed()
+				let timedout = new MessageEmbed()
 					.setColor('#ffffff')
-					.setTitle('Time Out')
-					.setDescription('Please try again.')
+					.setDescription('Timed out for posting')
 
-				interaction.followUp({ embeds: [embed], ephemeral: true })
+				interaction.editReply({ components: [], embeds: [timedout] })
 			}
 		})
 
