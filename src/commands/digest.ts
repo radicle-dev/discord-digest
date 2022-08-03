@@ -1,152 +1,87 @@
-import { ChatInputCommand, Command } from "@sapphire/framework";
-import { createFunctionPrecondition } from "@sapphire/decorators";
-import {
-  PROMPTS,
-  PromptStyle,
-  summarizeChannel,
-  Summary,
-} from "../lib/summarizer";
-import { TextChannel } from "discord.js";
-import { ChannelType } from "discord-api-types/v10";
-import { ServerConfig, SERVER_CONFIGS } from "../lib/config";
+import { ChatInputCommand } from '@sapphire/framework'
+import { PROMPTS, PromptStyle, summarizeChannel, Summary } from '../lib/summarizer'
+import { MessageEmbed, TextChannel } from 'discord.js'
+import { ChannelType } from 'discord-api-types/v10'
+import { BaseCommand, IRunCommandParams } from '../lib/basecommand'
 
-const RequiresValidInteraction = createFunctionPrecondition(
-  async (interaction: Command.ChatInputInteraction) => {
-    // not sure what's possible here, so some basic sanity checks
-    const channel = interaction.options.getChannel(
-      "channel",
-      true
-    ) as TextChannel;
-    return interaction.guild === channel.guild && !!interaction.guild.me;
-  },
-  (interaction: Command.ChatInputInteraction) => {
-    return interaction.reply({
-      content: "Invalid interaction",
-      ephemeral: true,
-    });
-  }
-);
+export class DigestCommand extends BaseCommand {
+	public override registerApplicationCommands(registry: ChatInputCommand.Registry) {
+		registry.registerChatInputCommand((builder) =>
+			builder
+				.setName('digest')
+				.setDescription('Summarize the last messages in a channel')
+				.addChannelOption((option) =>
+					option
+						.setName('channel')
+						.setDescription('Channel')
+						.setRequired(true)
+						.addChannelTypes(ChannelType.GuildText)
+				)
+				.addStringOption((option) =>
+					option
+						.setName('style')
+						.setDescription('Summary style')
+						.setRequired(false)
+						.addChoices(...Object.keys(PROMPTS).map((k) => ({ name: k, value: k })))
+				)
+		)
+	}
 
-export class DigestCommand extends Command {
-  public constructor(context: Command.Context, options: Command.Options) {
-    super(context, { ...options });
-  }
-  public override registerApplicationCommands(
-    registry: ChatInputCommand.Registry
-  ) {
-    registry.registerChatInputCommand((builder) =>
-      builder
-        .setName("digest")
-        .setDescription("Summarize the last messages in a channel")
-        .addChannelOption((option) =>
-          option
-            .setName("channel")
-            .setDescription("Channel")
-            .setRequired(true)
-            .addChannelTypes(ChannelType.GuildText)
-        )
-        .addStringOption((option) =>
-          option
-            .setName("style")
-            .setDescription("Summary style")
-            .setRequired(false)
-            .addChoices(
-              ...Object.keys(PROMPTS).map((k) => ({ name: k, value: k }))
-            )
-        )
-    );
-  }
+	async run({ interaction, guild, outputChannel, config }: IRunCommandParams) {
+		const { options } = interaction
+		const channel = options.getChannel('channel', true) as TextChannel
+		const style = options.getString('style', false) as PromptStyle | null
 
-  private async sendSummary(
-    interaction: Command.ChatInputInteraction,
-    summaryChannel: TextChannel,
-    summary: Summary,
-    config: ServerConfig
-  ) {
-    const guild = interaction.guild!;
+		if (!channel.permissionsFor(guild!.me!).has('VIEW_CHANNEL')) {
+			return interaction.reply({
+				content: "I don't have permission to view that channel",
+				ephemeral: true
+			})
+		}
 
-    const privateSummary =
-      !config.textOutputChannelId ||
-      !summaryChannel.permissionsFor(guild.roles.everyone).has("VIEW_CHANNEL");
+		if (channel.id === config.textOutputChannelId) {
+			return interaction.reply({
+				content: "I can't summarize that channel",
+				ephemeral: true
+			})
+		}
 
-    const summaryMsgText =
-      `${interaction.user} — here's a summary of the last ${summary.messageCount} messages in ${summaryChannel} (style: '${summary.style}')\n\n` +
-      `${summary.text}`;
+		const _msg = interaction.reply({
+			content: `Digesting...`,
+			ephemeral: true,
+			fetchReply: true
+		})
 
-    if (privateSummary) {
-      return interaction.editReply(summaryMsgText);
-    } else {
-      const outputChannel = await guild.channels.fetch(
-        config.textOutputChannelId
-      );
+		const _summary = summarizeChannel(channel, style || 'important')
+		let summary: Summary
 
-      if (!outputChannel?.isText())
-        return interaction.editReply(
-          `invalid output channel: ${outputChannel}`
-        );
+		try {
+			;[, summary] = await Promise.all([_msg, _summary])
+		} catch (e) {
+			return interaction.editReply(`Error: ${e}`)
+		}
 
-      const summaryMsg = await outputChannel.send(summaryMsgText);
-      return interaction.editReply(`${summaryMsg.url}`);
-    }
-  }
+		const delta = Date.now() - summary.messages[0].createdAt.getTime()
+		const days = Math.ceil(delta / (1000 * 3600 * 24))
 
-  @RequiresValidInteraction
-  public async chatInputRun(interaction: Command.ChatInputInteraction) {
-    const guild = interaction.guild!;
+		const post = new MessageEmbed()
+			.setColor('#00FF00')
+			.setTitle(`Summary of #${channel.name} from the last ${days} day${days > 1 ? 's' : ''}`)
+			.setDescription(summary.text)
+			.setFooter({ text: `💩 (prompt: '${summary.style}', msgs: ${summary.messages.length})` })
 
-    const config = SERVER_CONFIGS[guild.id];
+		const privateSummary = !channel.permissionsFor(guild.roles.everyone).has('VIEW_CHANNEL')
 
-    // check user has one of the whitelisted roles
-    const member = await interaction.guild!.members.fetch(interaction.user.id);
-    const whitelisted = member.roles.cache.some((role) =>
-      config.whitelistedRoles.some((id) => id === role.id)
-    );
-    if (!whitelisted) {
-      return interaction.reply({
-        content: "You don't have permission to use this command",
-        ephemeral: true,
-      });
-    }
-
-    const channel = interaction.options.getChannel(
-      "channel",
-      true
-    ) as TextChannel;
-
-    const style = interaction.options.getString(
-      "style",
-      false
-    ) as PromptStyle | null;
-
-    if (!channel.permissionsFor(guild.me!).has("VIEW_CHANNEL")) {
-      return interaction.reply({
-        content: "I don't have permission to view that channel",
-        ephemeral: true,
-      });
-    }
-
-    if (channel.id === config.textOutputChannelId) {
-      return interaction.reply({
-        content: "I can't summarize that channel",
-        ephemeral: true,
-      });
-    }
-
-    const _msg = interaction.reply({
-      content: `Digesting...`,
-      ephemeral: true,
-      fetchReply: true,
-    });
-
-    const _summary = summarizeChannel(channel, style || "important");
-    let summary: Summary;
-
-    try {
-      [, summary] = await Promise.all([_msg, _summary]);
-    } catch (e) {
-      return interaction.editReply(`Error: ${e}`);
-    }
-
-    return this.sendSummary(interaction, channel, summary, config);
-  }
+		if (privateSummary) {
+			return interaction.editReply({ embeds: [post] })
+		} else {
+			if (outputChannel.id === interaction.channelId) {
+				interaction.editReply('Digested!')
+				return interaction.followUp({ embeds: [post] })
+			} else {
+				const summaryMsg = await outputChannel.send({ embeds: [post] })
+				return interaction.editReply(`${summaryMsg.url}`)
+			}
+		}
+	}
 }
