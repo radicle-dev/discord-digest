@@ -41,12 +41,12 @@ export class DigestCommand extends BaseCommand {
 			.setLabel('Post')
 			.setStyle(MessageButtonStyles.PRIMARY)
 
-		const deleteBtn = new MessageButton()
-			.setCustomId('delete')
-			.setLabel('Delete')
+		const postWithPromptBtn = new MessageButton()
+			.setCustomId('post-with-prompt')
+			.setLabel('Post with prompt')
 			.setStyle(MessageButtonStyles.SECONDARY)
 
-		const row = new MessageActionRow().addComponents(postBtn, deleteBtn)
+		const row = new MessageActionRow().addComponents(postBtn, postWithPromptBtn)
 
 		await interaction.editReply({
 			content: output,
@@ -59,20 +59,18 @@ export class DigestCommand extends BaseCommand {
 		})
 
 		collector?.on('collect', async (i) => {
-			if (i.customId === 'post') {
+			if (i.customId === 'post' || i.customId === 'post-with-prompt') {
 				const content =
 					i.channelId === outputChannel.id ? 'Posting...' : `Posting to ${outputChannel}...`
 				i.update({ content, components: [] })
-				collector.stop('post')
-			} else if (i.customId === 'delete') {
-				collector.stop('delete')
-				i.update({ content: 'Deleted', components: [] })
+				collector.stop(i.customId)
 			}
 		})
 
 		collector?.on('end', (collected, reason) => {
-			if (reason === 'post') {
+			if (reason === 'post' || reason === 'post-with-prompt') {
 				const post = new MessageEmbed().setColor('#00FF00').setDescription(output)
+				if (reason === 'post-with-prompt') post.setFooter({ text: `📄 prompt: ${prompt}` })
 				outputChannel.send({ embeds: [post] })
 			} else if (reason === 'time') {
 				let timedout = new MessageEmbed()
