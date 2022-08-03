@@ -54,8 +54,7 @@ export class DigestCommand extends BaseCommand {
 		})
 
 		const collector = interaction.channel?.createMessageComponentCollector({
-			filter: (i) => i.user.id === interaction.user.id && !interaction.user.bot,
-			time: 30000
+			filter: (i) => i.user.id === interaction.user.id && !interaction.user.bot
 		})
 
 		collector?.on('collect', async (i) => {
